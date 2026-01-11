@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout 
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/bg_plugin_item"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:layout_marginVertical="4dp">
+
+    <!-- Icon -->
+    <TextView
+        android:id="@+id/pluginIcon"
+        android:layout_width="40dp"
+        android:layout_height="40dp"
+        android:background="@drawable/bg_plugin_icon"
+        android:gravity="center"
+        android:text="📝"
+        android:textSize="18sp" />
+
+    <!-- Info -->
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="12dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/pluginName"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="Plugin Name"
+            android:textColor="#ffffff"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/pluginDescription"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:text="Plugin description"
+            android:textColor="#b9bbbe"
+            android:textSize="12sp" />
+
+    </LinearLayout>
+
+    <!-- Toggle -->
+    <com.google.android.material.switchmaterial.SwitchMaterial
+        android:id="@+id/pluginToggle"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        app:thumbTint="@color/switch_thumb_color"
+        app:trackTint="@color/switch_track_color" />
+
+</LinearLayout>
