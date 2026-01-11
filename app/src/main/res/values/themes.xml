@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.Equidroid" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="colorPrimary">@color/discord_blurple</item>
+        <item name="colorPrimaryVariant">@color/discord_blurple</item>
+        <item name="colorOnPrimary">@color/text_primary</item>
+        <item name="colorSecondary">@color/discord_fuchsia</item>
+        <item name="android:colorBackground">@color/discord_dark_bg</item>
+        <item name="colorSurface">@color/discord_dark_secondary</item>
+        <item name="android:statusBarColor">@color/discord_dark_bg</item>
+        <item name="android:navigationBarColor">@color/discord_dark_bg</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+</resources>
