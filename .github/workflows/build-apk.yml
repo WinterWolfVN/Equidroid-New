@@ -3,77 +3,211 @@ name: Build Equidroid APK
 on:
   push:
     branches: [ main, master ]
+    tags:
+      - 'v*'
   pull_request:
     branches: [ main, master ]
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: 'Build Type'
+        required: true
+        default: 'debug'
+        type: choice
+        options:
+          - debug
+          - release
+
+env:
+  JAVA_VERSION: '17'
+  ANDROID_COMPILE_SDK: '34'
+  ANDROID_BUILD_TOOLS: '34.0.0'
 
 jobs:
-  build:
+  # ============== BUILD APK ==============
+  build-apk:
+    name: Build Android APK
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
+    - name: 📥 Checkout code
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
     
-    - name: Set up JDK 17
+    - name: ☕ Setup JDK 17
       uses: actions/setup-java@v4
       with:
-        java-version: '17'
+        java-version: ${{ env.JAVA_VERSION }}
         distribution: 'temurin'
         cache: gradle
     
-    - name: Setup Android SDK
+    - name: 🤖 Setup Android SDK
       uses: android-actions/setup-android@v3
     
-    - name: Grant execute permission for gradlew
+    - name: 📝 Grant execute permission for gradlew
       run: chmod +x gradlew
     
-    - name: Build Debug APK
-      run: ./gradlew assembleDebug
+    - name: 🔍 Validate Gradle wrapper
+      uses: gradle/wrapper-validation-action@v2
     
-    - name: Build Release APK
-      run: ./gradlew assembleRelease
+    - name: 🧹 Clean project
+      run: ./gradlew clean
     
-    - name: Upload Debug APK
+    - name: 🔨 Build Debug APK
+      run: ./gradlew assembleDebug --stacktrace
+    
+    - name: 🔨 Build Release APK
+      run: ./gradlew assembleRelease --stacktrace
+    
+    - name: 📝 Get version
+      id: version
+      run: |
+        VERSION_NAME=$(grep "versionName" app/build.gradle.kts | head -1 | awk -F'"' '{print $2}')
+        VERSION_CODE=$(grep "versionCode" app/build.gradle.kts | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
+        MIN_SDK=$(grep "minSdk" app/build.gradle.kts | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
+        echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
+        echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
+        echo "min_sdk=$MIN_SDK" >> $GITHUB_OUTPUT
+        echo "📦 Version: $VERSION_NAME ($VERSION_CODE)"
+        echo "📱 Min SDK: $MIN_SDK (Android 4.4+)"
+    
+    - name: 📤 Upload Debug APK
       uses: actions/upload-artifact@v4
       with:
-        name: equidroid-debug
+        name: equidroid-debug-v${{ steps.version.outputs.version_name }}
         path: app/build/outputs/apk/debug/*.apk
+        retention-days: 30
     
-    - name: Upload Release APK
+    - name: 📤 Upload Release APK
       uses: actions/upload-artifact@v4
       with:
-        name: equidroid-release
+        name: equidroid-release-v${{ steps.version.outputs.version_name }}
         path: app/build/outputs/apk/release/*.apk
+        retention-days: 90
+    
+    - name: 📊 APK Info
+      run: |
+        echo "📱 Debug APK:"
+        ls -lh app/build/outputs/apk/debug/*.apk
+        echo ""
+        echo "📱 Release APK:"
+        ls -lh app/build/outputs/apk/release/*.apk
 
+  # ============== BUILD PWA ==============
   build-pwa:
+    name: Build PWA Package
     runs-on: ubuntu-latest
-    needs: build
     
     steps:
-    - name: Checkout code
+    - name: 📥 Checkout code
       uses: actions/checkout@v4
     
-    - name: Setup Node.js
-      uses: actions/setup-node@v4
-      with:
-        node-version: '20'
-    
-    - name: Install Bubblewrap
-      run: npm install -g @anthropic-anthropic/anthropic-anthropic-anthropic-anthropic@anthropic-anthropic
-    
-    - name: Create TWA
+    - name: 📦 Package PWA files
       run: |
-        echo "PWA files ready for manual APK generation"
-        echo "Use PWABuilder or Bubblewrap to create APK"
+        mkdir -p pwa-package
+        cp index.html pwa-package/
+        cp manifest.json pwa-package/
+        cp sw.js pwa-package/
+        cp config.json pwa-package/
+        cp equicord-inject.js pwa-package/
+        
+        # Create icons directory
+        mkdir -p pwa-package/icons
+        
+        # Create simple SVG icons
+        for size in 72 96 128 144 152 192 384 512; do
+          cat > pwa-package/icons/icon-${size}.svg << EOF
+        <svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size}" viewBox="0 0 100 100">
+          <defs>
+            <linearGradient id="g" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#5865F2"/>
+              <stop offset="100%" stop-color="#EB459E"/>
+            </linearGradient>
+          </defs>
+          <rect width="100" height="100" rx="20" fill="url(#g)"/>
+          <text x="50" y="68" text-anchor="middle" fill="white" font-size="45" font-weight="bold" font-family="Arial">E</text>
+        </svg>
+        EOF
+        done
+        
+        echo "📁 PWA Package contents:"
+        ls -la pwa-package/
     
-    - name: Upload PWA files
+    - name: 📤 Upload PWA Package
       uses: actions/upload-artifact@v4
       with:
         name: equidroid-pwa
-        path: |
-          index.html
-          manifest.json
-          sw.js
-          config.json
-          equicord-inject.js
+        path: pwa-package/
+        retention-days: 30
+
+  # ============== CREATE RELEASE ==============
+  create-release:
+    name: Create GitHub Release
+    runs-on: ubuntu-latest
+    needs: [build-apk, build-pwa]
+    if: startsWith(github.ref, 'refs/tags/v')
+    
+    steps:
+    - name: 📥 Download APK artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: equidroid-*
+        path: ./artifacts
+    
+    - name: 📋 List artifacts
+      run: |
+        echo "📦 Downloaded artifacts:"
+        find ./artifacts -type f -name "*.apk" -o -name "*.zip"
+    
+    - name: 🚀 Create Release
+      uses: softprops/action-gh-release@v1
+      with:
+        name: Equidroid ${{ github.ref_name }}
+        body: |
+          ## 📱 Equidroid ${{ github.ref_name }}
+          
+          Discord + Equicord Client Mod cho Android
+          
+          ### 📥 Downloads
+          - **Debug APK**: Dành cho testing
+          - **Release APK**: Bản ổn định
+          - **PWA Package**: Dùng với PWABuilder
+          
+          ### ✨ Tính năng
+          - Discord WebView với Equicord injection
+          - Plugin system (Message Logger, Better Roles, No Track...)
+          - Custom CSS support
+          - Offline mode
+          
+          ### 📝 Cài đặt
+          1. Tải APK phù hợp
+          2. Cho phép "Unknown Sources"
+          3. Cài đặt và mở app
+          
+          ---
+          Made with ❤️ for Discord
+        files: |
+          ./artifacts/**/*.apk
+        draft: false
+        prerelease: false
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============== NOTIFY ==============
+  notify:
+    name: Build Notification
+    runs-on: ubuntu-latest
+    needs: [build-apk]
+    if: always()
+    
+    steps:
+    - name: 📢 Build Status
+      run: |
+        if [ "${{ needs.build-apk.result }}" == "success" ]; then
+          echo "✅ Build thành công!"
+          echo "📱 APK đã sẵn sàng để tải xuống từ Artifacts"
+        else
+          echo "❌ Build thất bại!"
+          echo "Vui lòng kiểm tra logs để biết chi tiết"
+        fi
