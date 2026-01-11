@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="false">
+        <domain includeSubdomains="true">discord.com</domain>
+        <domain includeSubdomains="true">discordapp.com</domain>
+        <domain includeSubdomains="true">discord.gg</domain>
+        <domain includeSubdomains="true">discordapp.net</domain>
+        <domain includeSubdomains="true">discord.media</domain>
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </domain-config>
+    
+    <base-config cleartextTrafficPermitted="false">
+        <trust-anchors>
+            <certificates src="system" />
+        </trust-anchors>
+    </base-config>
+</network-security-config>
