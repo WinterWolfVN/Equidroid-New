@@ -45,6 +45,14 @@ jobs:
     - name: 🤖 Setup Android SDK
       uses: android-actions/setup-android@v3
     
+    - name: ✅ Accept Android licenses
+      run: yes | sdkmanager --licenses || true
+    
+    - name: 📦 Install Android SDK components
+      run: |
+        sdkmanager "platforms;android-${{ env.ANDROID_COMPILE_SDK }}"
+        sdkmanager "build-tools;${{ env.ANDROID_BUILD_TOOLS }}"
+    
     - name: 📝 Grant execute permission for gradlew
       run: chmod +x gradlew
     
@@ -52,47 +60,80 @@ jobs:
       uses: gradle/wrapper-validation-action@v2
     
     - name: 🧹 Clean project
-      run: ./gradlew clean
+      run: ./gradlew clean --stacktrace
+    
+    - name: 📋 Check Gradle files
+      run: |
+        echo "Checking for build.gradle files..."
+        find . -name "build.gradle*" -type f
     
     - name: 🔨 Build Debug APK
-      run: ./gradlew assembleDebug --stacktrace
+      if: github.event.inputs.build_type == 'debug' || github.event.inputs.build_type == ''
+      run: ./gradlew assembleDebug --stacktrace --info
+      continue-on-error: false
     
-    - name: 🔨 Build Release APK
-      run: ./gradlew assembleRelease --stacktrace
+    - name: 🔨 Build Release APK (unsigned)
+      if: github.event.inputs.build_type == 'release' || startsWith(github.ref, 'refs/tags/v')
+      run: ./gradlew assembleRelease --stacktrace --info
+      continue-on-error: false
     
-    - name: 📝 Get version
+    - name: 📝 Get version info
       id: version
       run: |
-        VERSION_NAME=$(grep "versionName" app/build.gradle.kts | head -1 | awk -F'"' '{print $2}')
-        VERSION_CODE=$(grep "versionCode" app/build.gradle.kts | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
-        MIN_SDK=$(grep "minSdk" app/build.gradle.kts | head -1 | awk -F'=' '{print $2}' | tr -d ' ')
+        # Try multiple ways to get version
+        if [ -f "app/build.gradle.kts" ]; then
+          VERSION_NAME=$(grep -E "versionName\s*=\s*" app/build.gradle.kts | head -1 | sed -E 's/.*versionName\s*=\s*"([^"]+)".*/\1/' || echo "1.0.0")
+          VERSION_CODE=$(grep -E "versionCode\s*=\s*" app/build.gradle.kts | head -1 | sed -E 's/.*versionCode\s*=\s*([0-9]+).*/\1/' || echo "1")
+          MIN_SDK=$(grep -E "minSdk\s*=\s*" app/build.gradle.kts | head -1 | sed -E 's/.*minSdk\s*=\s*([0-9]+).*/\1/' || echo "19")
+        elif [ -f "app/build.gradle" ]; then
+          VERSION_NAME=$(grep "versionName" app/build.gradle | head -1 | awk -F'"' '{print $2}' || echo "1.0.0")
+          VERSION_CODE=$(grep "versionCode" app/build.gradle | head -1 | awk '{print $2}' || echo "1")
+          MIN_SDK=$(grep "minSdkVersion" app/build.gradle | head -1 | awk '{print $2}' || echo "19")
+        else
+          VERSION_NAME="1.0.0"
+          VERSION_CODE="1"
+          MIN_SDK="19"
+        fi
+        
         echo "version_name=$VERSION_NAME" >> $GITHUB_OUTPUT
         echo "version_code=$VERSION_CODE" >> $GITHUB_OUTPUT
         echo "min_sdk=$MIN_SDK" >> $GITHUB_OUTPUT
         echo "📦 Version: $VERSION_NAME ($VERSION_CODE)"
-        echo "📱 Min SDK: $MIN_SDK (Android 4.4+)"
+        echo "📱 Min SDK: $MIN_SDK"
     
     - name: 📤 Upload Debug APK
+      if: always() && hashFiles('app/build/outputs/apk/debug/*.apk') != ''
       uses: actions/upload-artifact@v4
       with:
         name: equidroid-debug-v${{ steps.version.outputs.version_name }}
         path: app/build/outputs/apk/debug/*.apk
         retention-days: 30
+        if-no-files-found: warn
     
     - name: 📤 Upload Release APK
+      if: always() && hashFiles('app/build/outputs/apk/release/*.apk') != ''
       uses: actions/upload-artifact@v4
       with:
         name: equidroid-release-v${{ steps.version.outputs.version_name }}
         path: app/build/outputs/apk/release/*.apk
         retention-days: 90
+        if-no-files-found: warn
     
     - name: 📊 APK Info
+      if: always()
       run: |
-        echo "📱 Debug APK:"
-        ls -lh app/build/outputs/apk/debug/*.apk
+        echo "📁 Build outputs:"
+        find app/build/outputs/apk -type f -name "*.apk" 2>/dev/null || echo "No APK files found"
         echo ""
-        echo "📱 Release APK:"
-        ls -lh app/build/outputs/apk/release/*.apk
+        if [ -d "app/build/outputs/apk/debug" ]; then
+          echo "📱 Debug APK:"
+          ls -lh app/build/outputs/apk/debug/*.apk 2>/dev/null || echo "No debug APK"
+        fi
+        echo ""
+        if [ -d "app/build/outputs/apk/release" ]; then
+          echo "📱 Release APK:"
+          ls -lh app/build/outputs/apk/release/*.apk 2>/dev/null || echo "No release APK"
+        fi
 
   # ============== BUILD PWA ==============
   build-pwa:
@@ -106,11 +147,13 @@ jobs:
     - name: 📦 Package PWA files
       run: |
         mkdir -p pwa-package
-        cp index.html pwa-package/
-        cp manifest.json pwa-package/
-        cp sw.js pwa-package/
-        cp config.json pwa-package/
-        cp equicord-inject.js pwa-package/
+        
+        # Copy files if they exist
+        [ -f "index.html" ] && cp index.html pwa-package/ || echo "⚠️ index.html not found"
+        [ -f "manifest.json" ] && cp manifest.json pwa-package/ || echo "⚠️ manifest.json not found"
+        [ -f "sw.js" ] && cp sw.js pwa-package/ || echo "⚠️ sw.js not found"
+        [ -f "config.json" ] && cp config.json pwa-package/ || echo "⚠️ config.json not found"
+        [ -f "equicord-inject.js" ] && cp equicord-inject.js pwa-package/ || echo "⚠️ equicord-inject.js not found"
         
         # Create icons directory
         mkdir -p pwa-package/icons
@@ -132,7 +175,7 @@ jobs:
         done
         
         echo "📁 PWA Package contents:"
-        ls -la pwa-package/
+        ls -la pwa-package/ || echo "Empty package"
     
     - name: 📤 Upload PWA Package
       uses: actions/upload-artifact@v4
@@ -140,6 +183,7 @@ jobs:
         name: equidroid-pwa
         path: pwa-package/
         retention-days: 30
+        if-no-files-found: warn
 
   # ============== CREATE RELEASE ==============
   create-release:
@@ -158,7 +202,7 @@ jobs:
     - name: 📋 List artifacts
       run: |
         echo "📦 Downloaded artifacts:"
-        find ./artifacts -type f -name "*.apk" -o -name "*.zip"
+        find ./artifacts -type f 2>/dev/null || echo "No artifacts found"
     
     - name: 🚀 Create Release
       uses: softprops/action-gh-release@v1
@@ -191,6 +235,7 @@ jobs:
           ./artifacts/**/*.apk
         draft: false
         prerelease: false
+        fail_on_unmatched_files: false
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -210,4 +255,5 @@ jobs:
         else
           echo "❌ Build thất bại!"
           echo "Vui lòng kiểm tra logs để biết chi tiết"
+          echo "Kết quả: ${{ needs.build-apk.result }}"
         fi
